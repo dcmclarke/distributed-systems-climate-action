@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "ds.response";
+
+package response;
+
+service ClimateResponse {
+  rpc ActivateDevice(DeviceCommand) returns (DeviceStatus);
+  rpc ProcessDeviceCommands(stream DeviceCommand) returns (BatchCommandResponse);
+}
+
+message DeviceCommand {
+  string device_id = 1;
+  int32 intensity_level = 2;
+  string command_type = 3; // "activate", "deactivate", "adjust"
+}
+
+message DeviceStatus {
+  string device_id = 1;
+  bool is_active = 2;
+  int32 current_level = 3;
+  string status_message = 4;
+}
+
+message BatchCommandResponse {
+  int32 commands_processed = 1;
+  string overall_status = 2;
+  repeated DeviceStatus device_statuses = 3;
+}

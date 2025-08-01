@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "ds.environmental";
+
+package environmental;
+
+service EnvironmentalMonitoring {
+  rpc GetCurrentReadings(SensorRequest) returns (SensorData);
+  rpc StreamSensorData(SensorRequest) returns (stream SensorData);
+}
+
+message SensorRequest {
+  string location = 1;
+}
+
+message SensorData {
+  float temperature = 1;
+  float humidity = 2;
+  int32 co2_level = 3;
+  int32 air_quality_index = 4;
+  int64 timestamp = 5;
+}
+
+message HistoricalRequest {
+  string location = 1;
+  string time_period = 2;
+}
+
+message HistoricalData {
+  float temperature = 1;
+  float humidity = 2;
+  int32 co2_level = 3;
+  int32 air_quality_index = 4;
+  int64 timestamp = 5;
+}

@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "ds.analytics";
+
+package analytics;
+
+service ClimateAnalytics {
+  rpc AnalyzeClimateData(AnalysisRequest) returns (AnalysisResult);
+  rpc RealTimeAnalysis(stream AnalysisData) returns (stream AnalysisResult);
+}
+
+message AnalysisRequest {
+  string time_period = 1;
+  repeated string data_types = 2;
+  string location = 3;
+}
+
+message AnalysisResult {
+  float temperature_trend = 1;
+  string pollution_level = 2;
+  repeated string recommendations = 3;
+  float energy_efficiency_score = 4;
+}
+
+message AnalysisData {
+  float temperature = 1;
+  float humidity = 2;
+  int32 co2_level = 3;
+  int32 air_quality_index = 4;
+  int64 timestamp = 5;
+  string location = 6;
+}
