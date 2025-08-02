@@ -49,6 +49,8 @@ public class ControllerGUI extends Application {
     private TextField deviceIdField, intensityField, locationField;
     private ListView<String> discoveredServicesList;
 
+    private boolean streamActive = false;
+
     //service discovery
     private JmDNS jmdns;
 
@@ -378,6 +380,7 @@ public class ControllerGUI extends Application {
 
     private void startSensorStream() {
         try {
+            streamActive = true;
             SensorRequest request = SensorRequest.newBuilder()
                     .setLocation(locationField.getText())
                     .build();
@@ -385,16 +388,21 @@ public class ControllerGUI extends Application {
             sensorStreamObserver= new StreamObserver<SensorData>() {
                 @Override
                 public void onNext(SensorData data) {
+                    if (streamActive) {
                     Platform.runLater(() -> {
                         updateSensorDisplay(data);
                         logMessage("Streamed data: " + data.getTemperature() + "°C");
                     });
                 }
+                    }
 
                 @Override
                 public void onError(Throwable t) {
                     Platform.runLater(() -> {
-                        logMessage("Stream error: " + t.getMessage());
+                        if (streamActive) {
+                            logMessage("Stream error: " + t.getMessage());
+                        }
+                        streamActive = false;
                         startStreamBtn.setDisable(false);
                         stopStreamBtn.setDisable(true);
                     });
@@ -403,7 +411,10 @@ public class ControllerGUI extends Application {
                 @Override
                 public void onCompleted() {
                     Platform.runLater(() -> {
-                        logMessage("Sensor stream completed");
+                        if (streamActive) {
+                            logMessage("Sensor stream completed");
+                        }
+                        streamActive = false;
                         startStreamBtn.setDisable(false);
                         stopStreamBtn.setDisable(true);
                     });
@@ -417,13 +428,15 @@ public class ControllerGUI extends Application {
 
         } catch (Exception e) {
             logMessage("Error starting stream: " + e.getMessage());
+            streamActive = false;
         }
     }
 
     private void stopSensorStream() {
+        streamActive = false;
         startStreamBtn.setDisable(false);
         stopStreamBtn.setDisable(true);
-        logMessage("Stopped sensor stream");
+        logMessage("Stopped sensor stream (UI will ignore further updates)");
     }
 
     private void activateDevice() {
