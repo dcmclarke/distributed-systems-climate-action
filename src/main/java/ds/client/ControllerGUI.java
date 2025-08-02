@@ -26,6 +26,11 @@ import java.util.concurrent.TimeUnit;
 
 public class ControllerGUI extends Application {
 
+    //server instances to auto start without starting each server alone
+    private EnvironmentalMonitoringServer envServer;
+    private ClimateResponseServer responseServer;
+    private ClimateAnalyticsServer analyticsServer;
+
     //gRPC channels, stubs
     private ManagedChannel envChannel;
     private ManagedChannel responseChannel;
@@ -51,6 +56,9 @@ public class ControllerGUI extends Application {
     public void start(Stage primaryStage) {
         primaryStage.setTitle("Smart Climate Monitoring System - Control Dashboard");
 
+        startAllServers();
+        try { Thread.sleep(2000); } catch (InterruptedException e) {}
+
         //start gRPC connections
         setupGrpcConnections();
 
@@ -64,6 +72,51 @@ public class ControllerGUI extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
         primaryStage.setOnCloseRequest(e -> shutdown());
+    }
+
+    //method to start all servers
+    private void startAllServers() {
+        System.out.println("Starting all servers...");
+
+        try {
+            // Start Environmental Monitoring Server
+            envServer = new EnvironmentalMonitoringServer();
+            new Thread(() -> {
+                try {
+                    envServer.start();
+                    envServer.blockUntilShutdown();
+                } catch (Exception e) {
+                    System.err.println("Environmental server error: " + e.getMessage());
+                }
+            }).start();
+
+            //first start climate response server
+            responseServer = new ClimateResponseServer();
+            new Thread(() -> {
+                try {
+                    responseServer.start();
+                    responseServer.blockUntilShutdown();
+                } catch (Exception e) {
+                    System.err.println("Response server error: " + e.getMessage());
+                }
+            }).start();
+
+            //start climate analytics server
+            analyticsServer = new ClimateAnalyticsServer();
+            new Thread(() -> {
+                try {
+                    analyticsServer.start();
+                    analyticsServer.blockUntilShutdown();
+                } catch (Exception e) {
+                    System.err.println("Analytics server error: " + e.getMessage());
+                }
+            }).start();
+
+            System.out.println("All servers starting in background...");
+
+        } catch (Exception e) {
+            System.err.println("Failed to start servers: " + e.getMessage());
+        }
     }
 
     private VBox createUI() {
@@ -81,7 +134,8 @@ public class ControllerGUI extends Application {
         logArea = new TextArea();
         logArea.setPrefRowCount(8);
         logArea.setEditable(false);
-        logArea.appendText("=== Smart Climate System Started ===\n");
+        logArea.appendText("SMART CLIMATE SYSTEM STARTED:\n");
+        logArea.appendText("All servers started automatically\n");
 
         root.getChildren().addAll(
                 title,
@@ -202,7 +256,7 @@ public class ControllerGUI extends Application {
     }
 
     private void setupGrpcConnections() {
-        //environmental monitoring aervice
+        //environmental monitoring service
         envChannel = ManagedChannelBuilder.forAddress("localhost", 50051)
                 .usePlaintext()
                 .build();
@@ -408,18 +462,28 @@ public class ControllerGUI extends Application {
         });
     }
 
+    //shutdown to stop servers
     private void shutdown() {
         try {
             if (envChannel != null) envChannel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
             if (responseChannel != null) responseChannel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
             if (analyticsChannel != null) analyticsChannel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
             if (jmdns != null) jmdns.close();
+
+            //stop servers
+            if (envServer != null) envServer.stop();
+            if (responseServer != null) responseServer.stop();
+            if (analyticsServer != null) analyticsServer.stop();
+
+            System.out.println("All services shut down gracefully");
+
         } catch (Exception e) {
             System.err.println("Error during shutdown: " + e.getMessage());
         }
     }
 
     public static void main(String[] args) {
+        System.out.println("Starting Smart Climate Monitoring System...");
         launch(args);
     }
 }
