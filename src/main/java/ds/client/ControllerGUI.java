@@ -46,10 +46,12 @@ public class ControllerGUI extends Application {
     private Label tempLabel, humidityLabel, co2Label, aqiLabel;
     private Button getSensorDataBtn, startStreamBtn, stopStreamBtn;
     private Button activateDeviceBtn, analyzeDataBtn;
+    private Button realTimeAnalysisBtn;  // ADD THIS LINE
     private TextField deviceIdField, intensityField, locationField;
     private ListView<String> discoveredServicesList;
 
     private boolean streamActive = false;
+
 
     //service discovery
     private JmDNS jmdns;
@@ -61,6 +63,13 @@ public class ControllerGUI extends Application {
         //record startup time to track performance
         long startTime = System.currentTimeMillis();
 
+        VBox root = createUI();
+        Scene scene = new Scene(root, 900, 700);
+        primaryStage.setScene(scene);
+        primaryStage.show();
+        primaryStage.setOnCloseRequest(e -> shutdown());
+
+        //start servers
         startAllServers();
         try { Thread.sleep(2000); } catch (InterruptedException e) {}
 
@@ -68,13 +77,6 @@ public class ControllerGUI extends Application {
         setupGrpcConnections();
         //start service discovery
         setupServiceDiscovery();
-        //UI create
-        VBox root = createUI();
-
-        Scene scene = new Scene(root, 900, 700);
-        primaryStage.setScene(scene);
-        primaryStage.show();
-        primaryStage.setOnCloseRequest(e -> shutdown());
 
         //calculate display total startup time
         long duration = System.currentTimeMillis() - startTime;
@@ -249,13 +251,16 @@ public class ControllerGUI extends Application {
         deviceIdField = new TextField("airpurifier1");
         intensityField = new TextField("75");
         activateDeviceBtn = new Button("Activate Device");
+        Button batchCommandBtn = new Button("Send Batch Commands");
 
         activateDeviceBtn.setOnAction(e -> activateDevice());
+        batchCommandBtn.setOnAction(e -> sendBatchDeviceCommands());
 
         controlBox.getChildren().addAll(
                 new Label("Device ID:"), deviceIdField,
                 new Label("Intensity:"), intensityField,
-                activateDeviceBtn
+                activateDeviceBtn,
+                batchCommandBtn
         );
 
         section.getChildren().addAll(sectionTitle, controlBox);
@@ -271,9 +276,12 @@ public class ControllerGUI extends Application {
         sectionTitle.setStyle("-fx-font-weight: bold;");
 
         analyzeDataBtn = new Button("Analyze Climate Data");
-        analyzeDataBtn.setOnAction(e -> analyzeClimateData());
+        realTimeAnalysisBtn = new Button("Start Real-Time Analysis");
 
-        section.getChildren().addAll(sectionTitle, analyzeDataBtn);
+        analyzeDataBtn.setOnAction(e -> analyzeClimateData());
+        realTimeAnalysisBtn.setOnAction(e -> startRealTimeAnalysis());
+
+        section.getChildren().addAll(sectionTitle, analyzeDataBtn, realTimeAnalysisBtn);
         return section;
     }
 
@@ -453,6 +461,136 @@ public class ControllerGUI extends Application {
 
         } catch (Exception e) {
             logMessage("Error activating device: " + e.getMessage());
+        }
+    }
+
+    private void sendBatchDeviceCommands() {
+        try {
+            logMessage("Starting batch device command stream...");
+
+            ClimateResponseGrpc.ClimateResponseStub responseAsyncStub =
+                    ClimateResponseGrpc.newStub(responseChannel);
+
+            StreamObserver<BatchCommandResponse> responseObserver = new StreamObserver<BatchCommandResponse>() {
+                @Override
+                public void onNext(BatchCommandResponse response) {
+                    Platform.runLater(() -> {
+                        logMessage("Batch commands processed: " + response.getCommandsProcessed());
+                        logMessage("Overall status: " + response.getOverallStatus());
+                        for (DeviceStatus status : response.getDeviceStatusesList()) {
+                            logMessage("Device " + status.getDeviceId() + ": " +
+                                    (status.getIsActive() ? "ACTIVE" : "INACTIVE") +
+                                    " at " + status.getCurrentLevel() + "%");
+                        }
+                    });
+                }
+
+                @Override
+                public void onError(Throwable t) {
+                    Platform.runLater(() -> logMessage("Batch command error: " + t.getMessage()));
+                }
+
+                @Override
+                public void onCompleted() {
+                    Platform.runLater(() -> logMessage("Batch command stream completed"));
+                }
+            };
+
+            StreamObserver<DeviceCommand> requestObserver =
+                    responseAsyncStub.processDeviceCommands(responseObserver);
+
+            String[] devices = {"airpurifier1", "heater1", "ventilation1", "airconditioner1"};
+            int[] intensities = {80, 60, 90, 70};
+            String[] commands = {"activate", "activate", "activate", "deactivate"};
+
+            for (int i = 0; i < devices.length; i++) {
+                DeviceCommand command = DeviceCommand.newBuilder()
+                        .setDeviceId(devices[i])
+                        .setIntensityLevel(intensities[i])
+                        .setCommandType(commands[i])
+                        .build();
+
+                requestObserver.onNext(command);
+                logMessage("Sent command for " + devices[i]);
+                Thread.sleep(100);
+            }
+
+            requestObserver.onCompleted();
+            logMessage("All batch commands sent");
+
+        } catch (Exception e) {
+            logMessage("Error sending batch commands: " + e.getMessage());
+        }
+    }
+
+    //bidirectional streaming for real-time analysis
+    private void startRealTimeAnalysis() {
+        try {
+            logMessage("Starting real-time climate analysis...");
+
+            ClimateAnalyticsGrpc.ClimateAnalyticsStub analyticsAsyncStub =
+                    ClimateAnalyticsGrpc.newStub(analyticsChannel);
+
+            StreamObserver<AnalysisResult> responseObserver = new StreamObserver<AnalysisResult>() {
+                @Override
+                public void onNext(AnalysisResult result) {
+                    Platform.runLater(() -> {
+                        logMessage("REAL-TIME ANALYSIS:");
+                        logMessage("  Temperature trend: " + result.getTemperatureTrend() + "°C");
+                        logMessage("  Pollution level: " + result.getPollutionLevel());
+                        logMessage("  Efficiency: " + result.getEnergyEfficiencyScore() + "%");
+                        if (!result.getRecommendationsList().isEmpty()) {
+                            logMessage("  Recommendations: " + result.getRecommendationsList().get(0));
+                        }
+                        logMessage("  ---");
+                    });
+                }
+
+                @Override
+                public void onError(Throwable t) {
+                    Platform.runLater(() -> logMessage("Real-time analysis error: " + t.getMessage()));
+                }
+
+                @Override
+                public void onCompleted() {
+                    Platform.runLater(() -> logMessage("Real-time analysis completed"));
+                }
+            };
+
+            StreamObserver<AnalysisData> requestObserver =
+                    analyticsAsyncStub.realTimeAnalysis(responseObserver);
+
+            //simulated sensor data points
+            new Thread(() -> {
+                try {
+                    for (int i = 0; i < 10; i++) {
+                        final int dataPoint = i + 1;
+
+                        AnalysisData data = AnalysisData.newBuilder()
+                                .setTemperature(18.0f + (float)(Math.random() * 10))
+                                .setHumidity(40.0f + (float)(Math.random() * 40))
+                                .setCo2Level(300 + (int)(Math.random() * 500))
+                                .setAirQualityIndex(20 + (int)(Math.random() * 80))
+                                .setTimestamp(System.currentTimeMillis())
+                                .setLocation(locationField.getText())
+                                .build();
+
+                        requestObserver.onNext(data);
+                        Platform.runLater(() -> logMessage("Sent analysis data point " + dataPoint));
+
+                        Thread.sleep(500);
+                    }
+
+                    requestObserver.onCompleted();
+                    Platform.runLater(() -> logMessage("All analysis data sent"));
+
+                } catch (Exception e) {
+                    Platform.runLater(() -> logMessage("Error in real-time analysis: " + e.getMessage()));
+                }
+            }).start();
+
+        } catch (Exception e) {
+            logMessage("Error starting real-time analysis: " + e.getMessage());
         }
     }
 
