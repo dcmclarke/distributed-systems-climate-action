@@ -56,15 +56,16 @@ public class ControllerGUI extends Application {
     public void start(Stage primaryStage) {
         primaryStage.setTitle("Smart Climate Monitoring System - Control Dashboard");
 
+        //record startup time to track performance
+        long startTime = System.currentTimeMillis();
+
         startAllServers();
         try { Thread.sleep(2000); } catch (InterruptedException e) {}
 
         //start gRPC connections
         setupGrpcConnections();
-
         //start service discovery
         setupServiceDiscovery();
-
         //UI create
         VBox root = createUI();
 
@@ -72,50 +73,67 @@ public class ControllerGUI extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
         primaryStage.setOnCloseRequest(e -> shutdown());
+
+        //calculate display total startup time
+        long duration = System.currentTimeMillis() - startTime;
+        logMessage("System fully operational in " + duration + "ms");
     }
 
-    //method to start all servers
+    //method to start all servers with enhanced progress indicators
     private void startAllServers() {
         System.out.println("Starting all servers...");
 
+        logMessage("Starting Smart Climate Monitoring System...");
+        logMessage("Initializing distributed services...");
+
         try {
-            // Start Environmental Monitoring Server
+            //start enviro monitoring Server
+            logMessage("Starting Environmental Monitoring Server...");
             envServer = new EnvironmentalMonitoringServer();
             new Thread(() -> {
                 try {
                     envServer.start();
+                    Platform.runLater(() -> logMessage("Environmental Server: READY (Port 50051)"));
                     envServer.blockUntilShutdown();
                 } catch (Exception e) {
                     System.err.println("Environmental server error: " + e.getMessage());
+                    Platform.runLater(() -> logMessage("Environmental Server: FAILED"));
                 }
             }).start();
 
-            //first start climate response server
+            //start climate response server
+            logMessage("Starting Climate Response Server...");
             responseServer = new ClimateResponseServer();
             new Thread(() -> {
                 try {
                     responseServer.start();
+                    Platform.runLater(() -> logMessage("Response Server: READY (Port 50052)"));
                     responseServer.blockUntilShutdown();
                 } catch (Exception e) {
                     System.err.println("Response server error: " + e.getMessage());
+                    Platform.runLater(() -> logMessage("Response Server: FAILED"));
                 }
             }).start();
 
             //start climate analytics server
+            logMessage("Starting Analytics Server...");
             analyticsServer = new ClimateAnalyticsServer();
             new Thread(() -> {
                 try {
                     analyticsServer.start();
+                    Platform.runLater(() -> logMessage("Analytics Server: READY (Port 50053)"));
                     analyticsServer.blockUntilShutdown();
                 } catch (Exception e) {
                     System.err.println("Analytics server error: " + e.getMessage());
+                    Platform.runLater(() -> logMessage("Analytics Server: FAILED"));
                 }
             }).start();
 
-            System.out.println("All servers starting in background...");
+            logMessage("All servers starting... Please wait 2 seconds");
+            logMessage("Services will register with jmDNS automatically");
 
         } catch (Exception e) {
-            System.err.println("Failed to start servers: " + e.getMessage());
+            logMessage("Critical Error: Failed to start servers - " + e.getMessage());
         }
     }
 
@@ -130,12 +148,14 @@ public class ControllerGUI extends Application {
         VBox deviceSection = createDeviceSection();
         VBox analyticsSection = createAnalyticsSection();
 
-        //log area
+        //enhanced log area with better initial messages
         logArea = new TextArea();
         logArea.setPrefRowCount(8);
         logArea.setEditable(false);
-        logArea.appendText("SMART CLIMATE SYSTEM STARTED:\n");
-        logArea.appendText("All servers started automatically\n");
+        logArea.appendText("SMART CLIMATE SYSTEM INITIALIZATION\n");
+        logArea.appendText("Environmental monitoring, device control & analytics\n");
+        logArea.appendText("All servers managed automatically\n");
+        logArea.appendText("-----------------------------------------------\n");
 
         root.getChildren().addAll(
                 title,
@@ -179,7 +199,7 @@ public class ControllerGUI extends Application {
         locationField.setPrefWidth(100);
         locationBox.getChildren().addAll(new Label("Location:"), locationField);
 
-        //sensor rdings display
+        //sensor readings display
         GridPane readingsGrid = new GridPane();
         readingsGrid.setHgap(15);
         readingsGrid.setVgap(5);
@@ -275,12 +295,13 @@ public class ControllerGUI extends Application {
                 .build();
         analyticsStub = ClimateAnalyticsGrpc.newBlockingStub(analyticsChannel);
 
-        logMessage("Connected to all gRPC services");
+        logMessage("Connected to all gRPC services successfully");
     }
 
     private void setupServiceDiscovery() {
         try {
             jmdns = JmDNS.create(InetAddress.getLocalHost());
+            logMessage("Service discovery (jmDNS) initialized");
 
             //listen for environmental monitoring service
             jmdns.addServiceListener("_envmonitor._tcp.local.", new ServiceListener() {
@@ -311,7 +332,7 @@ public class ControllerGUI extends Application {
             jmdns.addServiceListener("_analytics._tcp.local.", createServiceListener("Climate Analytics"));
 
         } catch (IOException e) {
-            logMessage("Failed to setup service discovery: " + e.getMessage());
+            logMessage("Failed setup service discovery: " + e.getMessage());
         }
     }
 
@@ -324,7 +345,7 @@ public class ControllerGUI extends Application {
 
             @Override
             public void serviceRemoved(ServiceEvent event) {
-                Platform.runLater(() -> logMessage(serviceName + " Service - Removed"));
+                Platform.runLater(() -> logMessage("!" + serviceName + " Service - Removed"));
             }
 
             @Override
@@ -361,7 +382,7 @@ public class ControllerGUI extends Application {
                     .setLocation(locationField.getText())
                     .build();
 
-            sensorStreamObserver = new StreamObserver<SensorData>() {
+            sensorStreamObserver= new StreamObserver<SensorData>() {
                 @Override
                 public void onNext(SensorData data) {
                     Platform.runLater(() -> {
@@ -392,7 +413,7 @@ public class ControllerGUI extends Application {
             envAsyncStub.streamSensorData(request, sensorStreamObserver);
             startStreamBtn.setDisable(true);
             stopStreamBtn.setDisable(false);
-            logMessage("Started sensor data stream for " + locationField.getText());
+            logMessage("Sensor data started stream for " + locationField.getText());
 
         } catch (Exception e) {
             logMessage("Error starting stream: " + e.getMessage());
@@ -415,7 +436,7 @@ public class ControllerGUI extends Application {
 
             DeviceStatus response = responseStub.activateDevice(command);
             logMessage("Device activated: " + response.getDeviceId() +
-                    " (Level: " + response.getCurrentLevel() + ")");
+                    " (Level: " + response.getCurrentLevel() +"%)");
 
         } catch (Exception e) {
             logMessage("Error activating device: " + e.getMessage());
@@ -433,15 +454,15 @@ public class ControllerGUI extends Application {
 
             AnalysisResult response = analyticsStub.analyzeClimateData(request);
 
-            logMessage("=== CLIMATE ANALYSIS RESULTS ===");
+            logMessage("CLIMATE ANALYSIS RESULTS:");
             logMessage("Temperature Trend: " + response.getTemperatureTrend() + "°C");
             logMessage("Pollution Level: " + response.getPollutionLevel());
             logMessage("Energy Efficiency: " + response.getEnergyEfficiencyScore() + "%");
             logMessage("Recommendations:");
             for (String rec : response.getRecommendationsList()) {
-                logMessage("  - " + rec);
+                logMessage("   • " + rec);
             }
-            logMessage("================================");
+            logMessage("--------------------------------");
 
         } catch (Exception e) {
             logMessage("Error analyzing data: " + e.getMessage());
@@ -462,28 +483,56 @@ public class ControllerGUI extends Application {
         });
     }
 
-    //shutdown to stop servers
+    //enhanced shutdown with progress tracking
     private void shutdown() {
+        logMessage("Shutting down Smart Climate System...");
         try {
-            if (envChannel != null) envChannel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
-            if (responseChannel != null) responseChannel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
-            if (analyticsChannel != null) analyticsChannel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
-            if (jmdns != null) jmdns.close();
+            //first shutdown gRPC channels
+            if (envChannel != null) {
+                envChannel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
+                logMessage("Environmental channel closed");
+            }
+            if (responseChannel != null) {
+                responseChannel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
+                logMessage("Response channel closed");
+            }
+            if (analyticsChannel != null) {
+                analyticsChannel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
+                logMessage("Analytics channel closed");
+            }
+
+            //close service discovery
+            if (jmdns != null) {
+                jmdns.close();
+                logMessage("Service discovery closed");
+            }
 
             //stop servers
-            if (envServer != null) envServer.stop();
-            if (responseServer != null) responseServer.stop();
-            if (analyticsServer != null) analyticsServer.stop();
+            if (envServer != null) {
+                envServer.stop();
+                logMessage("Environmental server stopped");
+            }
+            if (responseServer != null) {
+                responseServer.stop();
+                logMessage("Response server stopped");
+            }
+            if (analyticsServer != null) {
+                analyticsServer.stop();
+                logMessage("Analytics server stopped");
+            }
 
-            System.out.println("All services shut down gracefully");
+            logMessage("All services shut down as expected");
+            System.out.println("All services shut down as expected");
 
         } catch (Exception e) {
+            logMessage("Error during shutdown: " + e.getMessage());
             System.err.println("Error during shutdown: " + e.getMessage());
         }
     }
 
     public static void main(String[] args) {
-        System.out.println("Starting Smart Climate Monitoring System...");
+        System.out.println("Launching Smart Climate Monitoring System...");
+        System.out.println("Distributed Systems Project - Climate Action (SDG 13)");
         launch(args);
     }
 }
